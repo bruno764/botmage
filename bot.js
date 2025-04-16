@@ -156,10 +156,12 @@ bot.on('text', async (ctx) => {
       projectBalance = '0.5';
     }
 
+    ctx.session ??= {}; // ✅ Garante que a sessão exista
     ctx.session.walletData = { pubkey, solBalance, projectBalance, refCount, canClaim };
 
     await ctx.replyWithMarkdown(formatStatus(pubkey, solBalance, projectBalance, refCount, canClaim));
 
+    // Discord webhook
     try {
       await fetch(discordWebhook, {
         method: 'POST',
